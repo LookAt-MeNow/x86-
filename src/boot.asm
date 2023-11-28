@@ -3,91 +3,92 @@ mov ax,3
 int 0x10
 
 mov ax,0;
-mov ds,ax  
+mov ds,ax
+mov es,ax  
 mov ss,ax
 mov sp,0x7c00
-mov dx,0x1f2
-mov al,1
-out dx,al
-mov al,0
-inc dx; 0x1f3
-out dx,al
-inc dx; 0x1f4
-out dx,al
-inc dx; 0x1f5
-out dx,al
-inc dx;
-mov al,0b1110_0000
-out dx,al
-inc dx;0x1f7
-mov al,0x20 ;读硬盘
-out dx,al
-.check_read_state:
-    nop
-    nop
-    nop ;加延迟 ATA的要求
 
-    in al,dx
-    and al,0b1000_1000
-    cmp al,0b0000_1000
-    jnz .check_read_state
-mov ax,0x100
-mov es,ax
-mov di,0
-mov dx,0x1f0
+mov edi,0x1000
+mov ecx,2
+mov bl,4
+call read_disk
+jmp 0:0x1000 ;跳转到0x1000处执行
+read_disk:
+    pushad ;将a,b,c,d,si,di,sp,bp压栈
+    ;读取硬盘
+    ; edi --> 存储内存位置
+    ; edi是di的扩展，就是32位的di
+    ; ecx --> 读取的扇区位置
+    ; bl  --> 读取扇区的数量
 
-read_loop:
-    nop
-    nop
-    nop
-    in ax,dx
-    mov [es:di],ax
-    add di,2
-    cmp di,512
-    jnz read_loop
+    mov dx,0x1f2
+    mov al,bl
+    out dx,al ; 扇区数量
 
-mov dx,0x1f2
-mov al,1
-out dx,al
-mov al,2
-inc dx; 0x1f3
-out dx,al
-mov al,0 
-inc dx; 0x1f4
-out dx,al
-inc dx; 0x1f5
-out dx,al
-inc dx;
-mov al,0b1110_0000
-out dx,al
-inc dx;0x1f7
-mov al,0x30 ;写硬盘
-out dx,al
+    mov al,cl ;扇区位置低8位
+    inc dx; 0x1f3
+    out dx,al  ;扇区位置低8位
+    
+    shr ecx,8  ;ecx右移8位。扇区中间8位位置就到了低8位
+    inc dx; 0x1f4
+    mov al,cl
+    out dx,al  ;中间8位
+    
+    shr ecx,8  ;ecx右移8位。高8位就到了低8位
+    inc dx; 0x1f5
+    mov al,cl
+    out dx,al
+    
+    shr ecx,8
+    and cl,0b0000_1111 ;只取低4位
+    inc dx; 0x1f6
+    mov al,0b1110_0000 ;
+    or al,cl 
+    out dx,al
+    
+    inc dx;0x1f7
+    mov al,0x20 ;读硬盘
+    out dx,al
 
-mov ax,0x100
-mov es,ax
-mov di,0
-mov dx,0x1f0
+    xor ecx,ecx ;清零
+    mov cl,bl
 
-write_loop:
-    nop
-    nop
-    nop
-    mov ax,[es:di]
-    out dx,ax
-    add di,2
-    cmp di,512
-    jnz write_loop
-mov dx,0x1f7 
-.check_write_state:
-    nop
-    nop
-    nop ;加延迟 ATA的要求
+.read:
+    push cx
+    call .waits
+    call .reads
+    pop cx
+    loop .read
+    popad
+    ret
 
-    in al,dx
-    and al,0b1000_0000
-    cmp al,0b1000_0000
-    jz .check_write_state
+.waits:
+    mov dx,0x1f7
+    .check_read_state:
+        nop
+        nop
+        nop ;加延迟 ATA的要求
+
+        in al,dx
+        and al,0b1000_1000
+        cmp al,0b0000_1000
+        jnz .check_read_state
+    ret
+
+.reads:
+    mov dx,0x1f0
+    mov cx,256 ;一个扇区256个字
+    .read_loop:
+        nop
+        nop
+        nop
+        in ax,dx
+        mov [edi],ax
+        add di,2
+        loop .read_loop
+    ret
+
+
 jmp $
 times 510 -($-$$) db 0
 db 0x55,0xaa
